@@ -10,7 +10,9 @@ import {
 } from 'react-native';
 import { CameraView, CameraType } from 'expo-camera';
 import * as Location from 'expo-location';
-import * as MediaLibrary from 'expo-media-library';
+// The top-level expo-media-library asset/album functions are deprecated in this
+// SDK and throw at runtime; the `/legacy` entry provides the working impls.
+import * as MediaLibrary from 'expo-media-library/legacy';
 import { File, Paths } from 'expo-file-system';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { captureRef } from 'react-native-view-shot';
@@ -82,31 +84,44 @@ export default function CameraScreen({ onOpenGallery, onCaptured }: CameraScreen
     let sub: Location.LocationSubscription | undefined;
     let cancelled = false;
 
+    const applyPosition = async (pos: Location.LocationObject) => {
+      if (cancelled) return;
+      const { latitude, longitude, accuracy } = pos.coords;
+      setLocation((prev) => ({ ...prev, latitude, longitude, accuracy }));
+
+      const key = `${latitude.toFixed(3)},${longitude.toFixed(3)}`;
+      if (key === lastGeocodeKey.current) return;
+      lastGeocodeKey.current = key;
+      try {
+        const results = await Location.reverseGeocodeAsync({ latitude, longitude });
+        if (cancelled || results.length === 0) return;
+        const a = results[0];
+        const line = [a.name || a.street, a.city || a.subregion, a.region]
+          .filter(Boolean)
+          .join(', ');
+        setLocation((prev) => ({ ...prev, address: line || null }));
+      } catch {
+        // Reverse geocoding is best-effort; keep showing coordinates.
+      }
+    };
+
     (async () => {
       const { status } = await Location.getForegroundPermissionsAsync();
       if (status !== 'granted') return;
-      sub = await Location.watchPositionAsync(
-        { accuracy: Location.Accuracy.High, distanceInterval: 3, timeInterval: 2000 },
-        async (pos) => {
-          if (cancelled) return;
-          const { latitude, longitude, accuracy } = pos.coords;
-          setLocation((prev) => ({ ...prev, latitude, longitude, accuracy }));
 
-          const key = `${latitude.toFixed(3)},${longitude.toFixed(3)}`;
-          if (key === lastGeocodeKey.current) return;
-          lastGeocodeKey.current = key;
-          try {
-            const results = await Location.reverseGeocodeAsync({ latitude, longitude });
-            if (cancelled || results.length === 0) return;
-            const a = results[0];
-            const line = [a.name || a.street, a.city || a.subregion, a.region]
-              .filter(Boolean)
-              .join(', ');
-            setLocation((prev) => ({ ...prev, address: line || null }));
-          } catch {
-            // Reverse geocoding is best-effort; keep showing coordinates.
-          }
-        },
+      // Show an instant approximate fix from cache while a precise one loads.
+      try {
+        const last = await Location.getLastKnownPositionAsync();
+        if (last) applyPosition(last);
+      } catch {
+        // No cached position yet; the watcher below will deliver one.
+      }
+
+      // Balanced accuracy uses Wi-Fi/cell as well as GPS, so it locks quickly
+      // and works indoors (pure GPS can take minutes or never fix inside).
+      sub = await Location.watchPositionAsync(
+        { accuracy: Location.Accuracy.Balanced, distanceInterval: 5, timeInterval: 3000 },
+        applyPosition,
       );
     })();
 
@@ -121,21 +136,22 @@ export default function CameraScreen({ onOpenGallery, onCaptured }: CameraScreen
     ts: number;
   }
 
-  /** Saves a freshly captured file to the library and our gallery store. */
+  /** Saves a freshly captured file to the app gallery and the phone's gallery. */
   async function persistCapture(uri: string, type: MediaType, snap: CaptureSnapshot) {
-    // Best-effort save to the device camera roll.
-    try {
-      await MediaLibrary.saveToLibraryAsync(uri);
-    } catch {
-      // Library save is optional; the in-app gallery is the source of truth.
-    }
-
+    // 1) Copy into the app-owned gallery (primary source of truth; always works).
     ensureMediaDir();
     const ext = uri.split('.').pop() || (type === 'photo' ? 'jpg' : 'mov');
     const name = `${snap.ts}.${ext}`;
-    const src = new File(uri);
     const dest = new File(Paths.document, 'media', name);
-    await src.move(dest);
+    try {
+      if (dest.exists) dest.delete();
+      await new File(uri).copy(dest);
+      console.log('[KDC] copied to app gallery:', dest.uri);
+    } catch (e) {
+      console.log('[KDC] app-gallery copy FAILED:', String(e));
+      Alert.alert('Could not save capture', String(e));
+      return;
+    }
 
     addItem({
       file: name,
@@ -147,6 +163,22 @@ export default function CameraScreen({ onOpenGallery, onCaptured }: CameraScreen
       address: snap.loc.address,
     });
     onCaptured();
+
+    // 2) Also add it to the phone's gallery, in a dedicated "KDC Cam" album.
+    //    Surface failures so they aren't lost (e.g. limited media permission).
+    try {
+      const asset = await MediaLibrary.createAssetAsync(uri);
+      const album = await MediaLibrary.getAlbumAsync('KDC Cam');
+      if (album) {
+        await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
+      } else {
+        await MediaLibrary.createAlbumAsync('KDC Cam', asset, false);
+      }
+      console.log('[KDC] added to phone gallery (KDC Cam album):', asset.uri);
+    } catch (e) {
+      console.log('[KDC] phone-gallery save FAILED:', String(e));
+      Alert.alert('Saved in app, but not to phone gallery', String(e));
+    }
   }
 
   /** Resolves the in-flight bake with a final URI and tears down the stage. */
@@ -165,8 +197,10 @@ export default function CameraScreen({ onOpenGallery, onCaptured }: CameraScreen
     const fallback = bakeJob?.uri ?? '';
     try {
       const out = await captureRef(bakeViewRef, { format: 'jpg', quality: 0.92 });
+      console.log('[KDC] bake captured:', out);
       finishBake(out || fallback);
-    } catch {
+    } catch (e) {
+      console.log('[KDC] bake FAILED, using original:', String(e));
       finishBake(fallback);
     }
   }
@@ -194,8 +228,10 @@ export default function CameraScreen({ onOpenGallery, onCaptured }: CameraScreen
     try {
       const photo = await cameraRef.current.takePictureAsync({ quality: 0.9 });
       if (!photo?.uri) return;
+      console.log('[KDC] photo taken:', photo.width, 'x', photo.height, photo.uri);
       const snap: CaptureSnapshot = { loc: location, ts: Date.now() };
       const baked = await bakeStamp(photo.uri, photo.width, photo.height, snap);
+      console.log('[KDC] bake result, fellBackToOriginal=', baked === photo.uri);
       await persistCapture(baked || photo.uri, 'photo', snap);
     } catch (e) {
       Alert.alert('Could not take photo', String(e));
