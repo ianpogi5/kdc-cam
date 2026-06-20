@@ -43,3 +43,8 @@ yarn-error.*
 # Local Expo module build artifacts
 modules/*/android/build/
 modules/*/android/.cxx/
+
+# Release signing keystore — NEVER commit
+release-keystore/
+*.keystore
+*.jks

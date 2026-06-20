@@ -19,6 +19,7 @@
     },
     "android": {
       "package": "com.kdc.cam",
+      "versionCode": 1,
       "adaptiveIcon": {
         "backgroundColor": "#000000",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -52,7 +53,8 @@
         }
       ],
       "expo-video",
-      "expo-status-bar"
+      "expo-status-bar",
+      "./plugins/withReleaseSigning"
     ]
   }
 }

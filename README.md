@@ -1,12 +1,18 @@
 # KDC Cam
 
-A simple cross-platform (Android + iOS) camera app built with Expo / React Native.
+A simple camera app built with Expo / React Native. **Android only** — the
+camera is implemented natively with CameraX (the iOS view is an unimplemented
+stub).
 
 - 📷 Take **photos** and record **videos**
 - 📍 Live **GPS location** (reverse-geocoded address + coordinates) and a **timestamp** stamped across the bottom of the screen
-- 🔥 The stamp is **burned into saved photos** (so it survives sharing/export); videos keep the overlay in the in-app viewer
+- 🔥 The stamp is **burned into both photos and videos in real time** (CameraX), so it survives sharing/export — videos save instantly with no re-encode
 - 🖼️ Built-in **gallery** to browse, play, and delete what you've captured
 - Captures are also saved to your device's photo library
+
+> **Just want to install it?** See **[INSTALL.md](INSTALL.md)** and grab the
+> latest APK from the [Releases page](https://github.com/ianpogi5/kdc-cam/releases/latest).
+> (Android only.)
 
 ## Requirements
 
@@ -64,39 +70,53 @@ permissions.
 > `expo-camera`, `expo-location`, and `expo-media-library` need real hardware —
 > they will not function on the web target or in a simulator without a camera.
 
-## Release builds
+## Releasing a shareable APK
 
-### Android — local release APK
+Releases are built and published automatically by GitHub Actions
+([`.github/workflows/release.yml`](.github/workflows/release.yml)): on every
+`v*` tag it runs `expo prebuild`, builds a **signed release APK**, and publishes
+a GitHub Release with the APK attached and notes pulled from `CHANGELOG.md`.
+
+To cut a release:
+
+```bash
+node scripts/release.mjs 1.1.0   # bumps app.json version + versionCode, updates CHANGELOG
+# edit CHANGELOG.md to describe what changed, then:
+git add app.json CHANGELOG.md
+git commit -m "Release 1.1.0"
+git tag v1.1.0
+git push origin main v1.1.0      # the tag triggers the build + release
+```
+
+Friends then install/update from the [Releases page](https://github.com/ianpogi5/kdc-cam/releases/latest)
+— see **[INSTALL.md](INSTALL.md)**.
+
+### Signing
+
+The APK is signed with a release keystore so updates install over older
+versions. CI reads it from four repo secrets: `ANDROID_KEYSTORE_BASE64`,
+`ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`
+(injected into Gradle by the [`withReleaseSigning`](plugins/withReleaseSigning.js)
+config plugin). **Keep a backup of the keystore** — losing it means friends must
+uninstall before they can install future updates.
+
+### Local release build (for testing)
 
 ```bash
 npx expo prebuild --clean -p android
-( cd android && ./gradlew assembleRelease )
+( cd android && ./gradlew assembleRelease )   # unsigned without the keystore props
 # → android/app/build/outputs/apk/release/app-release.apk
 ```
-
-> The template signs `release` with the **debug key**, which is fine for
-> sideloading to testers. For the **Play Store** you need your own keystore —
-> the simplest path is EAS-managed credentials (below), which generates and
-> stores the keystore for you and produces an `.aab`.
-
-### Play Store / App Store via EAS (managed signing)
-
-```bash
-npm install -g eas-cli
-eas login
-eas init                                   # links the project (creates projectId)
-eas build -p android --profile production   # signed .aab for Play Store
-eas build -p ios --profile production        # needs an Apple Developer account
-```
-
-`eas.json` already defines `development`, `preview`, and `production` profiles.
 
 ## How it works
 
 - `App.tsx` — permission gate + simple screen navigation (Camera / Gallery / Viewer)
-- `src/CameraScreen.tsx` — `expo-camera` preview, live GPS via `expo-location`,
-  photo/video capture, and burning the stamp into photos (off-screen capture
-  via `react-native-view-shot`)
+- `modules/stamp-camera/` — a local Expo **CameraX** view module that owns the
+  camera and burns the stamp into photos and video as they're captured (via
+  `OverlayEffect` for video and a native composite for photos)
+- `src/CameraScreen.tsx` — the camera UI: live GPS via `expo-location`,
+  photo/video capture driving the native view, and rendering the stamp PNG
+  (off-screen via `react-native-view-shot`) that gets burned in
 - `src/GalleryScreen.tsx` — grid of captured items
 - `src/MediaViewer.tsx` — full-screen photo / video (`expo-video`) playback with
   the saved location + timestamp overlay

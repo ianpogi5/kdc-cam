@@ -1,0 +1,58 @@
+name: Release APK
+
+# Build a signed, shareable APK and publish a GitHub Release whenever a version
+# tag (e.g. v1.2.3) is pushed. See scripts/release.mjs to cut a release.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate native Android project
+        run: npx expo prebuild --platform android --no-install
+
+      - name: Decode release keystore
+        run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android/app/release.keystore
+
+      - name: Build release APK
+        working-directory: android
+        run: |
+          ./gradlew assembleRelease \
+            -PKDC_UPLOAD_STORE_FILE=release.keystore \
+            -PKDC_UPLOAD_STORE_PASSWORD="${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" \
+            -PKDC_UPLOAD_KEY_ALIAS="${{ secrets.ANDROID_KEY_ALIAS }}" \
+            -PKDC_UPLOAD_KEY_PASSWORD="${{ secrets.ANDROID_KEY_PASSWORD }}"
+
+      - name: Name the APK after the tag
+        run: cp android/app/build/outputs/apk/release/app-release.apk "kdc-cam-${{ github.ref_name }}.apk"
+
+      - name: Extract changelog for this version
+        run: node scripts/extract-changelog.mjs "${{ github.ref_name }}" > RELEASE_NOTES.md
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          body_path: RELEASE_NOTES.md
+          files: kdc-cam-${{ github.ref_name }}.apk
