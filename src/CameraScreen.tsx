@@ -272,6 +272,10 @@ export default function CameraScreen({ onOpenGallery, onCaptured }: CameraScreen
             resizeMode="cover"
             onLoad={runBakeCapture}
           />
+          {/* Lift the exposure: re-encoding drops the camera's HDR shadow
+              brightening, so composite a translucent white wash to compensate.
+              (A captured-reliably approach; CSS filters aren't captured.) */}
+          <View style={styles.bakeBrighten} pointerEvents="none" />
           <View style={styles.bakeStamp}>
             <Stamp
               latitude={bakeJob.loc.latitude}
@@ -366,6 +370,17 @@ const styles = StyleSheet.create({
   // Sits behind the camera preview so it renders (and is capturable) but is
   // never seen by the user.
   bakeStage: { position: 'absolute', top: 0, left: 0, backgroundColor: colors.bg },
+  bakeBrighten: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    // "screen" blend lifts the dark shadows toward the original exposure while
+    // leaving highlights intact (no flat-veil haze). Mid-grey tunes the amount.
+    backgroundColor: 'rgb(88,88,88)',
+    mixBlendMode: 'screen',
+  },
   bakeStamp: { position: 'absolute', left: 12, right: 12, bottom: 12 },
   topBar: {
     position: 'absolute',
