@@ -1,0 +1,16 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1024" height="1024" rx="230" fill="#14161b"/>
+  <g>
+    <!-- viewfinder bump -->
+    <path d="M392 384 l30 -58 h180 l30 58 z" fill="#f4f6f9"/>
+    <!-- camera body -->
+    <rect x="176" y="372" width="672" height="416" rx="78" fill="#f4f6f9"/>
+    <!-- flash -->
+    <circle cx="744" cy="452" r="28" fill="#ff4d4f"/>
+    <!-- lens ring -->
+    <circle cx="512" cy="586" r="156" fill="#14161b"/>
+    <!-- location pin -->
+    <path d="M512 470 c-72 0 -130 58 -130 130 c0 96 130 222 130 222 c0 0 130 -126 130 -222 c0 -72 -58 -130 -130 -130 z" fill="#ff4d4f"/>
+    <circle cx="512" cy="600" r="46" fill="#f4f6f9"/>
+  </g>
+</svg>

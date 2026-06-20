@@ -1,0 +1,13 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <mask id="lens">
+      <rect width="1024" height="1024" fill="white"/>
+      <circle cx="512" cy="586" r="116" fill="black"/>
+    </mask>
+  </defs>
+  <g transform="translate(512,512) scale(0.72) translate(-512,-557)" mask="url(#lens)" fill="#ffffff">
+    <path d="M392 384 l30 -58 h180 l30 58 z"/>
+    <rect x="176" y="372" width="672" height="416" rx="78"/>
+    <path d="M512 470 c-72 0 -130 58 -130 130 c0 96 130 222 130 222 c0 0 130 -126 130 -222 c0 -72 -58 -130 -130 -130 z"/>
+  </g>
+</svg>

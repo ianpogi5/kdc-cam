@@ -1,0 +1,66 @@
+{
+  "expo": {
+    "name": "KDC Cam",
+    "slug": "kdc-cam",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.kdc.cam",
+      "infoPlist": {
+        "NSCameraUsageDescription": "KDC Cam uses the camera to take photos and videos.",
+        "NSMicrophoneUsageDescription": "KDC Cam uses the microphone to record audio with your videos.",
+        "NSLocationWhenInUseUsageDescription": "KDC Cam stamps your photos and videos with your current location.",
+        "NSPhotoLibraryUsageDescription": "KDC Cam saves the photos and videos you capture to your library.",
+        "NSPhotoLibraryAddUsageDescription": "KDC Cam saves the photos and videos you capture to your library."
+      }
+    },
+    "android": {
+      "package": "com.kdc.cam",
+      "adaptiveIcon": {
+        "backgroundColor": "#000000",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "KDC Cam uses the camera to take photos and videos.",
+          "microphonePermission": "KDC Cam uses the microphone to record audio with your videos.",
+          "recordAudioAndroid": true
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "KDC Cam stamps your photos and videos with your current location."
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "KDC Cam saves the photos and videos you capture to your library.",
+          "savePhotosPermission": "KDC Cam saves the photos and videos you capture to your library.",
+          "isAccessMediaLocationEnabled": true
+        }
+      ],
+      "expo-video",
+      "expo-status-bar"
+    ]
+  }
+}

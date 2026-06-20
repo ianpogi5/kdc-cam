@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx --yes create-expo-app@latest . --template blank-typescript)",
+      "Read(//tmp/**)",
+      "Bash(rm -rf kdc-cam-scaffold)",
+      "Bash(npx --yes create-expo-app@latest kdc-cam-scaffold --template blank-typescript)",
+      "Bash(npx expo *)"
+    ]
+  }
+}
