@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { PermissionsAndroid, Pressable, StyleSheet, Text, View } from 'react-native';
+import { BackHandler, PermissionsAndroid, Pressable, StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
@@ -15,7 +15,8 @@ type Screen = 'camera' | 'gallery' | 'viewer';
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>('camera');
-  const [selected, setSelected] = useState<MediaItem | null>(null);
+  const [viewerItems, setViewerItems] = useState<MediaItem[]>([]);
+  const [viewerIndex, setViewerIndex] = useState(0);
   const [refreshKey, setRefreshKey] = useState(0);
 
   const [libPerm, requestLib] = MediaLibrary.usePermissions();
@@ -47,6 +48,24 @@ export default function App() {
     const loc = await Location.requestForegroundPermissionsAsync();
     setLocGranted(loc.granted);
   }
+
+  // Map Android's hardware back button onto the in-app screen stack instead of
+  // letting it exit the app. Only the camera (root) screen falls through to the
+  // OS default.
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (screen === 'viewer') {
+        setScreen('gallery');
+        return true;
+      }
+      if (screen === 'gallery') {
+        setScreen('camera');
+        return true;
+      }
+      return false;
+    });
+    return () => sub.remove();
+  }, [screen]);
 
   const ready = camMicGranted && libPerm?.granted && locGranted === true;
 
@@ -82,14 +101,20 @@ export default function App() {
         <GalleryScreen
           refreshKey={refreshKey}
           onBack={() => setScreen('camera')}
-          onOpenItem={(item) => {
-            setSelected(item);
+          onOpenItem={(items, index) => {
+            setViewerItems(items);
+            setViewerIndex(index);
             setScreen('viewer');
           }}
         />
       )}
-      {screen === 'viewer' && selected && (
-        <MediaViewer item={selected} onBack={() => setScreen('gallery')} />
+      {screen === 'viewer' && viewerItems.length > 0 && (
+        <MediaViewer
+          items={viewerItems}
+          initialIndex={viewerIndex}
+          onBack={() => setScreen('gallery')}
+          onChanged={() => setRefreshKey((k) => k + 1)}
+        />
       )}
     </SafeAreaProvider>
   );

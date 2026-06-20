@@ -16,7 +16,7 @@ import { deleteItem, loadItems, MediaItem, mediaUri } from './metadata';
 
 interface GalleryScreenProps {
   onBack: () => void;
-  onOpenItem: (item: MediaItem) => void;
+  onOpenItem: (items: MediaItem[], index: number) => void;
   /** Bumped by the parent whenever a new capture is saved. */
   refreshKey: number;
 }
@@ -71,9 +71,9 @@ export default function GalleryScreen({ onBack, onOpenItem, refreshKey }: Galler
           numColumns={COLUMNS}
           columnWrapperStyle={{ gap: GAP }}
           contentContainerStyle={{ gap: GAP, paddingBottom: insets.bottom + 12 }}
-          renderItem={({ item }) => (
+          renderItem={({ item, index }) => (
             <Pressable
-              onPress={() => onOpenItem(item)}
+              onPress={() => onOpenItem(items, index)}
               onLongPress={() => confirmDelete(item)}
               style={[styles.cell, { width: cell, height: cell }]}
             >
