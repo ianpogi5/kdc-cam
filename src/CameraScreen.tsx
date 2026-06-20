@@ -146,10 +146,8 @@ export default function CameraScreen({ onOpenGallery, onCaptured }: CameraScreen
     try {
       if (dest.exists) dest.delete();
       await new File(uri).copy(dest);
-      console.log('[KDC] copied to app gallery:', dest.uri);
     } catch (e) {
-      console.log('[KDC] app-gallery copy FAILED:', String(e));
-      Alert.alert('Could not save capture', String(e));
+      console.log('[KDC] app-gallery copy failed:', String(e));
       return;
     }
 
@@ -164,20 +162,11 @@ export default function CameraScreen({ onOpenGallery, onCaptured }: CameraScreen
     });
     onCaptured();
 
-    // 2) Also add it to the phone's gallery, in a dedicated "KDC Cam" album.
-    //    Surface failures so they aren't lost (e.g. limited media permission).
+    // 2) Also save it to the phone's gallery (default location, no album).
     try {
-      const asset = await MediaLibrary.createAssetAsync(uri);
-      const album = await MediaLibrary.getAlbumAsync('KDC Cam');
-      if (album) {
-        await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
-      } else {
-        await MediaLibrary.createAlbumAsync('KDC Cam', asset, false);
-      }
-      console.log('[KDC] added to phone gallery (KDC Cam album):', asset.uri);
+      await MediaLibrary.saveToLibraryAsync(uri);
     } catch (e) {
-      console.log('[KDC] phone-gallery save FAILED:', String(e));
-      Alert.alert('Saved in app, but not to phone gallery', String(e));
+      console.log('[KDC] phone-gallery save failed:', String(e));
     }
   }
 
