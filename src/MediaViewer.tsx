@@ -2,7 +2,6 @@ import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import Stamp from './Stamp';
 import { colors } from './theme';
 import { MediaItem, mediaUri } from './metadata';
 
@@ -40,15 +39,6 @@ export default function MediaViewer({ item, onBack }: MediaViewerProps) {
       >
         <Text style={styles.backText}>‹ Gallery</Text>
       </Pressable>
-
-      <View style={[styles.stampWrap, { paddingBottom: insets.bottom + 16 }]}>
-        <Stamp
-          latitude={item.latitude}
-          longitude={item.longitude}
-          address={item.address}
-          timestamp={item.timestamp}
-        />
-      </View>
     </View>
   );
 }
@@ -64,10 +54,4 @@ const styles = StyleSheet.create({
     borderRadius: 18,
   },
   backText: { color: colors.text, fontSize: 16, fontWeight: '600' },
-  stampWrap: {
-    position: 'absolute',
-    left: 16,
-    right: 16,
-    bottom: 0,
-  },
 });

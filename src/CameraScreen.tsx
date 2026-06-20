@@ -2,14 +2,13 @@ import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Image,
   Pressable,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
-import { CameraView, CameraType } from 'expo-camera';
 import * as Location from 'expo-location';
+import * as Brightness from 'expo-brightness';
 // The top-level expo-media-library asset/album functions are deprecated in this
 // SDK and throw at runtime; the `/legacy` entry provides the working impls.
 import * as MediaLibrary from 'expo-media-library/legacy';
@@ -18,6 +17,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { captureRef } from 'react-native-view-shot';
 import { useKeepAwake } from 'expo-keep-awake';
 
+import {
+  StampCameraView,
+  type CaptureErrorEvent,
+  type PhotoCapturedEvent,
+  type RecordingFinishedEvent,
+} from '../modules/stamp-camera';
 import Stamp from './Stamp';
 import { colors } from './theme';
 import { formatDuration } from './format';
@@ -42,30 +47,46 @@ const EMPTY_LOCATION: LiveLocation = {
   address: null,
 };
 
+const waitFrame = () => new Promise<void>((r) => requestAnimationFrame(() => r()));
+
 export default function CameraScreen({ onOpenGallery, onCaptured }: CameraScreenProps) {
   const insets = useSafeAreaInsets();
-  const cameraRef = useRef<CameraView>(null);
 
   // Keep the screen awake while the camera is open (e.g. during recording).
   useKeepAwake();
 
-  const [facing, setFacing] = useState<CameraType>('back');
+  const [facing, setFacing] = useState<'back' | 'front'>('back');
   const [mode, setMode] = useState<MediaType>('photo');
   const [busy, setBusy] = useState(false);
   const [recording, setRecording] = useState(false);
+  // True while a finished recording is being saved; keeps the shutter disabled
+  // and shows a "Saving…" state. With live burn-in this is now brief.
+  const [processing, setProcessing] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [now, setNow] = useState(() => Date.now());
   const [location, setLocation] = useState<LiveLocation>(EMPTY_LOCATION);
 
+  // The stamp PNG burned into the next capture, and a counter that triggers a
+  // native photo when bumped. Both are props on <StampCameraView>.
+  const [overlayUri, setOverlayUri] = useState<string | null>(null);
+  const [photoRequestId, setPhotoRequestId] = useState(0);
+
   const lastGeocodeKey = useRef<string | null>(null);
 
-  // Off-screen "bake" stage used to burn the stamp into the saved photo.
-  const [bakeJob, setBakeJob] = useState<
-    null | { uri: string; w: number; h: number; loc: LiveLocation; ts: number }
-  >(null);
-  const bakeViewRef = useRef<View>(null);
-  const bakeResolve = useRef<((uri: string) => void) | null>(null);
-  const bakeDone = useRef(false);
+  // Off-screen "overlay" stage: the stamp on a transparent background, captured
+  // as a PNG that the native camera burns into the photo/video as it records.
+  const [overlayJob, setOverlayJob] = useState<null | { loc: LiveLocation; ts: number }>(null);
+  const overlayViewRef = useRef<View>(null);
+  const overlayResolve = useRef<((uri: string | null) => void) | null>(null);
+  const overlayDone = useRef(false);
+
+  // Pending native-photo promises keyed by request id, and the snapshot frozen
+  // when the current recording started.
+  const photoIdRef = useRef(0);
+  const photoResolvers = useRef(
+    new Map<number, { resolve: (uri: string) => void; reject: (e: Error) => void }>(),
+  );
+  const recordingSnap = useRef<CaptureSnapshot | null>(null);
 
   // Keep the on-screen clock current.
   useEffect(() => {
@@ -144,7 +165,7 @@ export default function CameraScreen({ onOpenGallery, onCaptured }: CameraScreen
   async function persistCapture(uri: string, type: MediaType, snap: CaptureSnapshot) {
     // 1) Copy into the app-owned gallery (primary source of truth; always works).
     ensureMediaDir();
-    const ext = uri.split('.').pop() || (type === 'photo' ? 'jpg' : 'mov');
+    const ext = uri.split('.').pop() || (type === 'photo' ? 'jpg' : 'mp4');
     const name = `${snap.ts}.${ext}`;
     const dest = new File(Paths.document, 'media', name);
     try {
@@ -174,58 +195,70 @@ export default function CameraScreen({ onOpenGallery, onCaptured }: CameraScreen
     }
   }
 
-  /** Resolves the in-flight bake with a final URI and tears down the stage. */
-  function finishBake(resultUri: string) {
-    if (bakeDone.current) return;
-    bakeDone.current = true;
-    const resolve = bakeResolve.current;
-    bakeResolve.current = null;
-    setBakeJob(null);
+  /** Resolves the in-flight overlay capture and tears down the stage. */
+  function finishOverlay(resultUri: string | null) {
+    if (overlayDone.current) return;
+    overlayDone.current = true;
+    const resolve = overlayResolve.current;
+    overlayResolve.current = null;
+    setOverlayJob(null);
     resolve?.(resultUri);
   }
 
-  /** Captures the off-screen stage once its image has loaded. */
-  async function runBakeCapture() {
-    if (bakeDone.current || !bakeViewRef.current) return;
-    const fallback = bakeJob?.uri ?? '';
+  /** Captures the off-screen overlay stage as a transparent PNG. */
+  async function captureOverlay() {
+    if (overlayDone.current || !overlayViewRef.current) return;
     try {
-      const out = await captureRef(bakeViewRef, { format: 'jpg', quality: 0.92 });
-      console.log('[KDC] bake captured:', out);
-      finishBake(out || fallback);
+      const out = await captureRef(overlayViewRef, { format: 'png', quality: 1, result: 'tmpfile' });
+      finishOverlay(out || null);
     } catch (e) {
-      console.log('[KDC] bake FAILED, using original:', String(e));
-      finishBake(fallback);
+      console.log('[KDC] overlay capture failed:', String(e));
+      finishOverlay(null);
     }
   }
 
   /**
-   * Renders the photo + location/timestamp stamp off-screen and captures it,
-   * returning a new URI with the stamp burned into the pixels. Falls back to
-   * the original photo if compositing fails.
+   * Renders the stamp on a transparent background off-screen and captures it,
+   * returning a PNG URI for the native camera to burn in (or null on failure).
    */
-  function bakeStamp(uri: string, photoW: number, photoH: number, snap: CaptureSnapshot) {
-    const BASE_W = 384;
-    const aspect = photoW && photoH ? photoH / photoW : 4 / 3;
-    return new Promise<string>((resolve) => {
-      bakeDone.current = false;
-      bakeResolve.current = resolve;
-      setBakeJob({ uri, w: BASE_W, h: Math.round(BASE_W * aspect), loc: snap.loc, ts: snap.ts });
-      // Safety net: if onLoad/capture never fires, keep the original photo.
-      setTimeout(() => finishBake(uri), 4000);
+  function renderStampPng(snap: CaptureSnapshot) {
+    return new Promise<string | null>((resolve) => {
+      overlayDone.current = false;
+      overlayResolve.current = resolve;
+      setOverlayJob({ loc: snap.loc, ts: snap.ts });
+      // Safety net: if onLayout/capture never fires, skip the overlay.
+      setTimeout(() => finishOverlay(null), 4000);
+    });
+  }
+
+  /** Triggers a native photo and resolves with its file URI. */
+  function capturePhoto(): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const id = photoIdRef.current + 1;
+      photoIdRef.current = id;
+      photoResolvers.current.set(id, { resolve, reject });
+      setPhotoRequestId(id);
+      setTimeout(() => {
+        const entry = photoResolvers.current.get(id);
+        if (entry) {
+          photoResolvers.current.delete(id);
+          entry.reject(new Error('photo timed out'));
+        }
+      }, 8000);
     });
   }
 
   async function takePhoto() {
-    if (busy || !cameraRef.current) return;
+    if (busy || processing) return;
     setBusy(true);
     try {
-      const photo = await cameraRef.current.takePictureAsync({ quality: 0.9 });
-      if (!photo?.uri) return;
-      console.log('[KDC] photo taken:', photo.width, 'x', photo.height, photo.uri);
       const snap: CaptureSnapshot = { loc: location, ts: Date.now() };
-      const baked = await bakeStamp(photo.uri, photo.width, photo.height, snap);
-      console.log('[KDC] bake result, fellBackToOriginal=', baked === photo.uri);
-      await persistCapture(baked || photo.uri, 'photo', snap);
+      // Stage the stamp, let the prop flush to native, then capture.
+      const overlay = await renderStampPng(snap);
+      setOverlayUri(overlay);
+      await waitFrame();
+      const uri = await capturePhoto();
+      await persistCapture(uri, 'photo', snap);
     } catch (e) {
       Alert.alert('Could not take photo', String(e));
     } finally {
@@ -234,25 +267,79 @@ export default function CameraScreen({ onOpenGallery, onCaptured }: CameraScreen
   }
 
   async function toggleRecording() {
-    if (!cameraRef.current) return;
-
     if (recording) {
-      cameraRef.current.stopRecording();
+      // Reflect the stop right away; native finalises and fires
+      // onRecordingFinished, which persists the file and clears "Saving…".
+      setRecording(false);
+      setProcessing(true);
       return;
     }
 
-    // Freeze location/time when recording starts; videos keep the overlay in
-    // the viewer (the stamp is not burned into video frames).
+    // Freeze location/time when recording starts so the burned-in stamp matches
+    // the moment the recording began.
     const snap: CaptureSnapshot = { loc: location, ts: Date.now() };
-    setRecording(true);
+    recordingSnap.current = snap;
+
+    // Pin the window brightness at its current level so One UI can't dim the
+    // screen mid-recording (FLAG_KEEP_SCREEN_ON alone doesn't stop the dim).
     try {
-      const video = await cameraRef.current.recordAsync();
-      if (video?.uri) await persistCapture(video.uri, 'video', snap);
+      const level = await Brightness.getBrightnessAsync();
+      await Brightness.setBrightnessAsync(level);
     } catch (e) {
-      Alert.alert('Could not record video', String(e));
-    } finally {
-      setRecording(false);
+      console.log('[KDC] brightness pin failed:', String(e));
     }
+
+    // Stage the stamp, let the prop flush to native, then start recording.
+    const overlay = await renderStampPng(snap);
+    setOverlayUri(overlay);
+    await waitFrame();
+    setRecording(true);
+  }
+
+  function handlePhotoCaptured(e: PhotoCapturedEvent) {
+    const { uri, requestId } = e.nativeEvent;
+    const entry = photoResolvers.current.get(requestId);
+    if (entry) {
+      photoResolvers.current.delete(requestId);
+      entry.resolve(uri);
+    }
+  }
+
+  async function handleRecordingFinished(e: RecordingFinishedEvent) {
+    const uri = e.nativeEvent.uri;
+    const snap = recordingSnap.current;
+    recordingSnap.current = null;
+    try {
+      if (uri && snap) await persistCapture(uri, 'video', snap);
+    } catch (err) {
+      console.log('[KDC] persist video failed:', String(err));
+    } finally {
+      setProcessing(false);
+      try {
+        await Brightness.restoreSystemBrightnessAsync();
+      } catch {
+        // Best-effort.
+      }
+    }
+  }
+
+  function handleCaptureError(e: CaptureErrorEvent) {
+    const { message, requestId } = e.nativeEvent;
+    console.log('[KDC] capture error:', message);
+    if (requestId != null) {
+      // A photo failed — reject its pending promise.
+      const entry = photoResolvers.current.get(requestId);
+      if (entry) {
+        photoResolvers.current.delete(requestId);
+        entry.reject(new Error(message));
+      }
+      return;
+    }
+    // A recording/bind error — reset the recording UI and restore brightness.
+    setRecording(false);
+    setProcessing(false);
+    recordingSnap.current = null;
+    Brightness.restoreSystemBrightnessAsync().catch(() => {});
   }
 
   function onShutterPress() {
@@ -262,60 +349,49 @@ export default function CameraScreen({ onOpenGallery, onCaptured }: CameraScreen
 
   return (
     <View style={styles.container}>
-      {/* Off-screen stage: the photo + stamp, rendered behind the camera and
-          captured so the stamp is burned into the saved image. */}
-      {bakeJob && (
+      {/* Off-screen stage: the stamp on a transparent background, captured as a
+          PNG and burned into captures by the native camera. */}
+      {overlayJob && (
         <View
-          ref={bakeViewRef}
+          ref={overlayViewRef}
           collapsable={false}
-          style={[styles.bakeStage, { width: bakeJob.w, height: bakeJob.h }]}
+          style={styles.overlayStage}
+          onLayout={captureOverlay}
         >
-          <Image
-            source={{ uri: bakeJob.uri }}
-            style={{ width: bakeJob.w, height: bakeJob.h }}
-            resizeMode="cover"
-            onLoad={runBakeCapture}
+          <Stamp
+            latitude={overlayJob.loc.latitude}
+            longitude={overlayJob.loc.longitude}
+            address={overlayJob.loc.address}
+            timestamp={overlayJob.ts}
           />
-          {/* Lift the exposure: re-encoding drops the camera's HDR shadow
-              brightening, so composite a translucent white wash to compensate.
-              (A captured-reliably approach; CSS filters aren't captured.) */}
-          <View style={styles.bakeBrighten} pointerEvents="none" />
-          <View style={styles.bakeStamp}>
-            <Stamp
-              latitude={bakeJob.loc.latitude}
-              longitude={bakeJob.loc.longitude}
-              address={bakeJob.loc.address}
-              timestamp={bakeJob.ts}
-            />
-          </View>
         </View>
       )}
 
-      <CameraView
-        ref={cameraRef}
+      <StampCameraView
         style={StyleSheet.absoluteFill}
         facing={facing}
-        mode={mode === 'photo' ? 'picture' : 'video'}
+        overlayUri={overlayUri}
+        recording={recording}
+        photoRequestId={photoRequestId}
+        onPhotoCaptured={handlePhotoCaptured}
+        onRecordingFinished={handleRecordingFinished}
+        onCaptureError={handleCaptureError}
       />
 
-      {/* Top bar: gallery + flip */}
-      <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
-        <Pressable style={styles.iconButton} onPress={onOpenGallery} disabled={recording}>
-          <Text style={styles.iconText}>🖼️</Text>
-        </Pressable>
+      {/* Top bar: just the recording timer / saving indicator. */}
+      <View style={[styles.topBar, { paddingTop: insets.top + 8 }]} pointerEvents="none">
         {recording && (
           <View style={styles.recPill}>
             <View style={styles.recDot} />
             <Text style={styles.recText}>{formatDuration(elapsed)}</Text>
           </View>
         )}
-        <Pressable
-          style={styles.iconButton}
-          onPress={() => setFacing((f) => (f === 'back' ? 'front' : 'back'))}
-          disabled={recording}
-        >
-          <Text style={styles.iconText}>🔄</Text>
-        </Pressable>
+        {processing && (
+          <View style={styles.recPill}>
+            <ActivityIndicator color={colors.text} size="small" />
+            <Text style={styles.recText}>Saving…</Text>
+          </View>
+        )}
       </View>
 
       {/* Bottom: location/timestamp stamp + controls */}
@@ -328,25 +404,33 @@ export default function CameraScreen({ onOpenGallery, onCaptured }: CameraScreen
         />
 
         <View style={styles.modeRow}>
-          <Pressable onPress={() => !recording && setMode('photo')}>
+          <Pressable onPress={() => !recording && !processing && setMode('photo')}>
             <Text style={[styles.modeText, mode === 'photo' && styles.modeActive]}>PHOTO</Text>
           </Pressable>
-          <Pressable onPress={() => !recording && setMode('video')}>
+          <Pressable onPress={() => !recording && !processing && setMode('video')}>
             <Text style={[styles.modeText, mode === 'video' && styles.modeActive]}>VIDEO</Text>
           </Pressable>
         </View>
 
         <View style={styles.controls}>
-          <View style={styles.sideSlot} />
+          <View style={styles.sideSlot}>
+            <Pressable
+              style={styles.galleryButton}
+              onPress={() => setFacing((f) => (f === 'back' ? 'front' : 'back'))}
+              disabled={recording}
+            >
+              <Text style={styles.iconText}>🔄</Text>
+            </Pressable>
+          </View>
           <Pressable
             onPress={onShutterPress}
-            disabled={busy}
+            disabled={busy || processing}
             style={[
               styles.shutterOuter,
               mode === 'video' && styles.shutterOuterVideo,
             ]}
           >
-            {busy ? (
+            {busy || processing ? (
               <ActivityIndicator color={colors.text} />
             ) : (
               <View
@@ -371,28 +455,23 @@ export default function CameraScreen({ onOpenGallery, onCaptured }: CameraScreen
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
-  // Sits behind the camera preview so it renders (and is capturable) but is
-  // never seen by the user.
-  bakeStage: { position: 'absolute', top: 0, left: 0, backgroundColor: colors.bg },
-  bakeBrighten: {
+  // Transparent stage behind the camera; the native camera anchors this PNG
+  // full-width at the bottom of the frame, so bake in the side/bottom insets.
+  overlayStage: {
     position: 'absolute',
     top: 0,
     left: 0,
-    right: 0,
-    bottom: 0,
-    // "screen" blend lifts the dark shadows toward the original exposure while
-    // leaving highlights intact (no flat-veil haze). Higher grey = brighter.
-    backgroundColor: 'rgb(125,125,125)',
-    mixBlendMode: 'screen',
+    width: 384,
+    paddingHorizontal: 12,
+    paddingBottom: 12,
   },
-  bakeStamp: { position: 'absolute', left: 12, right: 12, bottom: 12 },
   topBar: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 16,
   },

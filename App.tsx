@@ -1,11 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { PermissionsAndroid, Pressable, StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import {
-  useCameraPermissions,
-  useMicrophonePermissions,
-} from 'expo-camera';
 import * as Location from 'expo-location';
 import * as MediaLibrary from 'expo-media-library';
 
@@ -22,25 +18,37 @@ export default function App() {
   const [selected, setSelected] = useState<MediaItem | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
-  const [camPerm, requestCam] = useCameraPermissions();
-  const [micPerm, requestMic] = useMicrophonePermissions();
   const [libPerm, requestLib] = MediaLibrary.usePermissions();
   const [locGranted, setLocGranted] = useState<boolean | null>(null);
+  // Camera + microphone (granted via the native PermissionsAndroid prompt, since
+  // we own the camera with CameraX rather than expo-camera).
+  const [camMicGranted, setCamMicGranted] = useState<boolean | null>(null);
 
   useEffect(() => {
-    Location.getForegroundPermissionsAsync().then((p) => setLocGranted(p.granted));
+    (async () => {
+      const cam = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.CAMERA);
+      const mic = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO);
+      setCamMicGranted(cam && mic);
+      const loc = await Location.getForegroundPermissionsAsync();
+      setLocGranted(loc.granted);
+    })();
   }, []);
 
   async function requestAll() {
-    await requestCam();
-    await requestMic();
+    const res = await PermissionsAndroid.requestMultiple([
+      PermissionsAndroid.PERMISSIONS.CAMERA,
+      PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+    ]);
+    setCamMicGranted(
+      res[PermissionsAndroid.PERMISSIONS.CAMERA] === PermissionsAndroid.RESULTS.GRANTED &&
+        res[PermissionsAndroid.PERMISSIONS.RECORD_AUDIO] === PermissionsAndroid.RESULTS.GRANTED,
+    );
     await requestLib();
     const loc = await Location.requestForegroundPermissionsAsync();
     setLocGranted(loc.granted);
   }
 
-  const ready =
-    camPerm?.granted && micPerm?.granted && libPerm?.granted && locGranted === true;
+  const ready = camMicGranted && libPerm?.granted && locGranted === true;
 
   if (!ready) {
     return (
