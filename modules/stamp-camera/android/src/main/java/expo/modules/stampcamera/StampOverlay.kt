@@ -35,30 +35,47 @@ class StampOverlay {
 
   /**
    * Draws the overlay along the bottom of the *displayed* video. The output
-   * buffer is the camera's natural (landscape) orientation, and the app is
-   * locked to portrait, so the displayed video is the buffer rotated 90° CW.
-   * We therefore draw the stamp upright in portrait "display space" and map it
-   * back into the buffer with a 90° CW pre-rotation, so it ends up upright.
+   * buffer is the camera's natural (landscape) orientation, so we draw the stamp
+   * upright in portrait "display space" and map it back into the buffer.
+   *
+   * Orientation is taken from the frame itself rather than hardcoded, so this
+   * works for both lenses: `rotationDegrees` is how far the buffer is turned to
+   * face upright (90° for the back camera in portrait), and `isMirroring` is set
+   * for the front camera, where the recorded output is flipped horizontally — we
+   * pre-flip the stamp so its text still reads correctly once the pipeline
+   * mirrors the frame. With rot=90, no mirror, and a full-frame crop this is the
+   * same transform the back camera used before.
    */
   fun draw(frame: Frame): Boolean {
     val canvas = frame.overlayCanvas
     canvas.drawColor(0, PorterDuff.Mode.CLEAR)
     val bmp = bitmap ?: return true
 
-    val bw = frame.size.width.toFloat()
-    val bh = frame.size.height.toFloat()
+    val crop = frame.cropRect
+    val cw = crop.width().toFloat()
+    val ch = crop.height().toFloat()
+    // rotationDegrees is how far the buffer is turned to face upright
+    // (buffer -> display). We draw the other way (display -> buffer), so apply
+    // the inverse rotation.
+    val rot = (360 - (((frame.rotationDegrees % 360) + 360) % 360)) % 360
 
-    // Displayed (portrait) dimensions are the buffer's, swapped.
-    val displayW = bh
-    val displayH = bw
+    // Upright (display) dimensions are the cropped buffer rotated by `rot`.
+    val displayW = if (rot == 90 || rot == 270) ch else cw
+    val displayH = if (rot == 90 || rot == 270) cw else ch
     val scaledH = displayW * bmp.height / bmp.width
     val dst = RectF(0f, displayH - scaledH, displayW, displayH)
 
-    // display -> buffer: rotate 90° CW, then shift back into [0, bw].
-    val matrix = Matrix().apply {
-      setRotate(90f)
-      postTranslate(bw, 0f)
+    // display -> buffer: mirror first (front camera), then rotate by `rot` and
+    // shift the rotated content into the buffer's cropped region.
+    val matrix = Matrix()
+    if (frame.isMirroring) matrix.postScale(-1f, 1f, displayW / 2f, displayH / 2f)
+    matrix.postRotate(rot.toFloat())
+    when (rot) {
+      90 -> matrix.postTranslate(displayH, 0f)
+      180 -> matrix.postTranslate(displayW, displayH)
+      270 -> matrix.postTranslate(0f, displayW)
     }
+    matrix.postTranslate(crop.left.toFloat(), crop.top.toFloat())
 
     canvas.save()
     canvas.concat(matrix)
