@@ -16,6 +16,7 @@ import * as MediaLibrary from 'expo-media-library/legacy';
 import { File, Paths } from 'expo-file-system';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { captureRef } from 'react-native-view-shot';
+import { useKeepAwake } from 'expo-keep-awake';
 
 import Stamp from './Stamp';
 import { colors } from './theme';
@@ -44,6 +45,9 @@ const EMPTY_LOCATION: LiveLocation = {
 export default function CameraScreen({ onOpenGallery, onCaptured }: CameraScreenProps) {
   const insets = useSafeAreaInsets();
   const cameraRef = useRef<CameraView>(null);
+
+  // Keep the screen awake while the camera is open (e.g. during recording).
+  useKeepAwake();
 
   const [facing, setFacing] = useState<CameraType>('back');
   const [mode, setMode] = useState<MediaType>('photo');
@@ -377,8 +381,8 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     // "screen" blend lifts the dark shadows toward the original exposure while
-    // leaving highlights intact (no flat-veil haze). Mid-grey tunes the amount.
-    backgroundColor: 'rgb(88,88,88)',
+    // leaving highlights intact (no flat-veil haze). Higher grey = brighter.
+    backgroundColor: 'rgb(125,125,125)',
     mixBlendMode: 'screen',
   },
   bakeStamp: { position: 'absolute', left: 12, right: 12, bottom: 12 },
