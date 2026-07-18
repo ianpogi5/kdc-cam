@@ -2,9 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   Pressable,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import * as Location from 'expo-location';
@@ -51,6 +53,9 @@ const waitFrame = () => new Promise<void>((r) => requestAnimationFrame(() => r()
 
 export default function CameraScreen({ onOpenGallery, onCaptured }: CameraScreenProps) {
   const insets = useSafeAreaInsets();
+  // The stamp stage is captured at the window's width so the burned-in stamp
+  // keeps the same on-screen scale in portrait and landscape.
+  const { width: windowWidth } = useWindowDimensions();
 
   // Keep the screen awake while the camera is open (e.g. during recording).
   useKeepAwake();
@@ -72,6 +77,18 @@ export default function CameraScreen({ onOpenGallery, onCaptured }: CameraScreen
   const [photoRequestId, setPhotoRequestId] = useState(0);
 
   const lastGeocodeKey = useRef<string | null>(null);
+
+  // Shutter feedback: a brief white flash over the preview when a photo is
+  // taken, so there's visible confirmation of the capture.
+  const flashOpacity = useRef(new Animated.Value(0)).current;
+  function flashShutter() {
+    flashOpacity.setValue(0.85);
+    Animated.timing(flashOpacity, {
+      toValue: 0,
+      duration: 320,
+      useNativeDriver: true,
+    }).start();
+  }
 
   // Off-screen "overlay" stage: the stamp on a transparent background, captured
   // as a PNG that the native camera burns into the photo/video as it records.
@@ -251,6 +268,7 @@ export default function CameraScreen({ onOpenGallery, onCaptured }: CameraScreen
   async function takePhoto() {
     if (busy || processing) return;
     setBusy(true);
+    flashShutter();
     try {
       const snap: CaptureSnapshot = { loc: location, ts: Date.now() };
       // Stage the stamp, let the prop flush to native, then capture.
@@ -355,7 +373,7 @@ export default function CameraScreen({ onOpenGallery, onCaptured }: CameraScreen
         <View
           ref={overlayViewRef}
           collapsable={false}
-          style={styles.overlayStage}
+          style={[styles.overlayStage, { width: windowWidth }]}
           onLayout={captureOverlay}
         >
           <Stamp
@@ -378,6 +396,12 @@ export default function CameraScreen({ onOpenGallery, onCaptured }: CameraScreen
         onCaptureError={handleCaptureError}
       />
 
+      {/* Shutter flash overlay. */}
+      <Animated.View
+        pointerEvents="none"
+        style={[StyleSheet.absoluteFill, styles.flash, { opacity: flashOpacity }]}
+      />
+
       {/* Top bar: just the recording timer / saving indicator. */}
       <View style={[styles.topBar, { paddingTop: insets.top + 8 }]} pointerEvents="none">
         {recording && (
@@ -395,7 +419,16 @@ export default function CameraScreen({ onOpenGallery, onCaptured }: CameraScreen
       </View>
 
       {/* Bottom: location/timestamp stamp + controls */}
-      <View style={[styles.bottom, { paddingBottom: insets.bottom + 14 }]}>
+      <View
+        style={[
+          styles.bottom,
+          {
+            paddingBottom: insets.bottom + 14,
+            paddingLeft: insets.left + 16,
+            paddingRight: insets.right + 16,
+          },
+        ]}
+      >
         <Stamp
           latitude={location.latitude}
           longitude={location.longitude}
@@ -455,13 +488,14 @@ export default function CameraScreen({ onOpenGallery, onCaptured }: CameraScreen
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
+  flash: { backgroundColor: '#fff' },
   // Transparent stage behind the camera; the native camera anchors this PNG
   // full-width at the bottom of the frame, so bake in the side/bottom insets.
+  // Width is set inline to the current window width.
   overlayStage: {
     position: 'absolute',
     top: 0,
     left: 0,
-    width: 384,
     paddingHorizontal: 12,
     paddingBottom: 12,
   },
@@ -500,7 +534,6 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    paddingHorizontal: 16,
     gap: 14,
   },
   modeRow: {

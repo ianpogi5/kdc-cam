@@ -1,4 +1,4 @@
-/** Formats epoch milliseconds as e.g. "Jun 20, 2026 · 2:45 PM". */
+/** Formats epoch milliseconds as e.g. "Jun 20, 2026 · 2:45:07 PM". */
 export function formatTimestamp(ms: number): string {
   const d = new Date(ms);
   const date = d.toLocaleDateString(undefined, {
@@ -9,6 +9,7 @@ export function formatTimestamp(ms: number): string {
   const time = d.toLocaleTimeString(undefined, {
     hour: 'numeric',
     minute: '2-digit',
+    second: '2-digit',
   });
   return `${date} · ${time}`;
 }

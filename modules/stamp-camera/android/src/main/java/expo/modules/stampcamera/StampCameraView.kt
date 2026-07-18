@@ -5,9 +5,11 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Matrix
+import android.hardware.display.DisplayManager
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import android.view.Surface
 import android.widget.LinearLayout
 import androidx.camera.core.CameraEffect
 import androidx.camera.core.CameraSelector
@@ -64,6 +66,10 @@ class StampCameraView(context: Context, appContext: AppContext) :
     // TextureView-backed preview composites correctly inside the React Native
     // (Fabric) view tree; the default SurfaceView mode renders black here.
     implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+    // Hold the screen awake whenever the camera is on screen — the JS-side
+    // expo-keep-awake hook doesn't reliably prevent sleep in release builds,
+    // and the device must never lock mid-recording.
+    keepScreenOn = true
     layoutParams = LinearLayout.LayoutParams(
       LinearLayout.LayoutParams.MATCH_PARENT,
       LinearLayout.LayoutParams.MATCH_PARENT,
@@ -75,6 +81,7 @@ class StampCameraView(context: Context, appContext: AppContext) :
   private val ioExecutor = Executors.newSingleThreadExecutor()
 
   private var cameraProvider: ProcessCameraProvider? = null
+  private var preview: Preview? = null
   private var imageCapture: ImageCapture? = null
   private var videoCapture: VideoCapture<Recorder>? = null
   private var overlayEffect: OverlayEffect? = null
@@ -84,6 +91,32 @@ class StampCameraView(context: Context, appContext: AppContext) :
   private var isRecording = false
   private var lastPhotoId = 0
   private var bound = false
+  private var displayRotation = Surface.ROTATION_0
+
+  // The use cases don't follow display rotation on their own: the activity
+  // handles rotation via configChanges (no recreate, no rebind), so their
+  // target rotation goes stale. Track the display and keep all of them current
+  // — preview so PreviewView renders upright, captures so landscape photos and
+  // videos come out upright with the stamp along the display's bottom edge.
+  private val displayListener = object : DisplayManager.DisplayListener {
+    override fun onDisplayAdded(displayId: Int) {}
+    override fun onDisplayRemoved(displayId: Int) {}
+    override fun onDisplayChanged(displayId: Int) {
+      val disp = display ?: return
+      if (displayId != disp.displayId) return
+      applyDisplayRotation(disp.rotation)
+    }
+  }
+
+  private fun applyDisplayRotation(rotation: Int) {
+    if (rotation == displayRotation) return
+    displayRotation = rotation
+    preview?.targetRotation = rotation
+    imageCapture?.targetRotation = rotation
+    // Changing the video rotation mid-recording would corrupt the in-flight
+    // stream's orientation; it's picked up on the next recording instead.
+    if (!isRecording) videoCapture?.targetRotation = rotation
+  }
 
   companion object {
     private const val TAG = "StampCamera"
@@ -96,6 +129,9 @@ class StampCameraView(context: Context, appContext: AppContext) :
   override fun onAttachedToWindow() {
     super.onAttachedToWindow()
     lifecycleRegistry.currentState = Lifecycle.State.RESUMED
+    display?.let { displayRotation = it.rotation }
+    (context.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager)
+      .registerDisplayListener(displayListener, Handler(Looper.getMainLooper()))
     val future = ProcessCameraProvider.getInstance(context)
     future.addListener({
       cameraProvider = future.get()
@@ -105,6 +141,8 @@ class StampCameraView(context: Context, appContext: AppContext) :
 
   override fun onDetachedFromWindow() {
     super.onDetachedFromWindow()
+    (context.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager)
+      .unregisterDisplayListener(displayListener)
     runCatching { activeRecording?.stop() }
     activeRecording = null
     isRecording = false
@@ -126,16 +164,16 @@ class StampCameraView(context: Context, appContext: AppContext) :
       provider.unbindAll()
       overlayEffect?.close()
 
-      val preview = Preview.Builder().build().also {
+      val previewUseCase = Preview.Builder().setTargetRotation(displayRotation).build().also {
         it.surfaceProvider = previewView.surfaceProvider
       }
-      val image = ImageCapture.Builder().build()
+      val image = ImageCapture.Builder().setTargetRotation(displayRotation).build()
       val recorder = Recorder.Builder()
         .setQualitySelector(
           QualitySelector.from(Quality.FHD, FallbackStrategy.higherQualityOrLowerThan(Quality.SD)),
         )
         .build()
-      val video = VideoCapture.withOutput(recorder)
+      val video = VideoCapture.withOutput(recorder).apply { targetRotation = displayRotation }
 
       // The effect can only target IMAGE_CAPTURE alongside PREVIEW, which would
       // double the stamp on the live preview. So burn video live via the effect
@@ -149,7 +187,7 @@ class StampCameraView(context: Context, appContext: AppContext) :
       effect.setOnDrawListener { frame -> overlay.draw(frame) }
 
       val group = UseCaseGroup.Builder()
-        .addUseCase(preview)
+        .addUseCase(previewUseCase)
         .addUseCase(image)
         .addUseCase(video)
         .addEffect(effect)
@@ -157,6 +195,7 @@ class StampCameraView(context: Context, appContext: AppContext) :
 
       val selector = CameraSelector.Builder().requireLensFacing(lensFacing).build()
       provider.bindToLifecycle(this, selector, group)
+      preview = previewUseCase
       imageCapture = image
       videoCapture = video
       overlayEffect = effect
@@ -237,6 +276,8 @@ class StampCameraView(context: Context, appContext: AppContext) :
       if (event is VideoRecordEvent.Finalize) {
         isRecording = false
         activeRecording = null
+        // Apply any rotation that happened mid-recording, now that it's safe.
+        videoCapture?.targetRotation = displayRotation
         if (event.hasError()) {
           onCaptureError(mapOf("message" to "recording error ${event.error}"))
         } else {

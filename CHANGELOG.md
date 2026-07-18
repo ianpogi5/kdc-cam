@@ -7,6 +7,19 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+- The stamp's timestamp now includes seconds, so consecutive captures are
+  distinguishable and video stamps don't look frozen.
+- Landscape support: rotate the phone and the camera UI follows; photos and
+  videos come out upright with the stamp along the bottom edge, on both the
+  back and front cameras.
+- A brief shutter flash when taking a photo, so there's visible confirmation
+  of the capture.
+
+### Fixed
+- The screen no longer dims or locks while the camera is open or a video is
+  recording.
+
 ## [1.1.0] - 2026-06-21
 ### Added
 - Swipe left or right while viewing a photo or video to move to the next or
