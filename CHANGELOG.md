@@ -7,6 +7,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-07-18
+
 ### Added
 - The stamp's timestamp now includes seconds, so consecutive captures are
   distinguishable and video stamps don't look frozen.
