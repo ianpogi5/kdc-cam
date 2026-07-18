@@ -92,7 +92,13 @@ export default function CameraScreen({ onOpenGallery, onCaptured }: CameraScreen
 
   // Off-screen "overlay" stage: the stamp on a transparent background, captured
   // as a PNG that the native camera burns into the photo/video as it records.
-  const [overlayJob, setOverlayJob] = useState<null | { loc: LiveLocation; ts: number }>(null);
+  // `width` pins the stage to the window width at recording start so ticks
+  // rendered mid-recording keep the aspect of the in-flight video.
+  const [overlayJob, setOverlayJob] = useState<null | {
+    loc: LiveLocation;
+    ts: number;
+    width: number;
+  }>(null);
   const overlayViewRef = useRef<View>(null);
   const overlayResolve = useRef<((uri: string | null) => void) | null>(null);
   const overlayDone = useRef(false);
@@ -104,6 +110,14 @@ export default function CameraScreen({ onOpenGallery, onCaptured }: CameraScreen
     new Map<number, { resolve: (uri: string) => void; reject: (e: Error) => void }>(),
   );
   const recordingSnap = useRef<CaptureSnapshot | null>(null);
+
+  // Live-stamp ticking while recording: the latest location without re-running
+  // effects, the stage width frozen at recording start, and the previous tick's
+  // PNG so its temp file can be deleted once replaced.
+  const locationRef = useRef(location);
+  locationRef.current = location;
+  const recordingStageWidth = useRef(0);
+  const lastTickUri = useRef<string | null>(null);
 
   // Keep the on-screen clock current.
   useEffect(() => {
@@ -238,15 +252,51 @@ export default function CameraScreen({ onOpenGallery, onCaptured }: CameraScreen
    * Renders the stamp on a transparent background off-screen and captures it,
    * returning a PNG URI for the native camera to burn in (or null on failure).
    */
-  function renderStampPng(snap: CaptureSnapshot) {
+  function renderStampPng(snap: CaptureSnapshot, width = windowWidth) {
     return new Promise<string | null>((resolve) => {
       overlayDone.current = false;
       overlayResolve.current = resolve;
-      setOverlayJob({ loc: snap.loc, ts: snap.ts });
+      setOverlayJob({ loc: snap.loc, ts: snap.ts, width });
       // Safety net: if onLayout/capture never fires, skip the overlay.
       setTimeout(() => finishOverlay(null), 4000);
     });
   }
+
+  // While recording, re-render the stamp every second with the live clock (and
+  // location) and swap it into the native overlay, so the burned-in timestamp
+  // ticks instead of staying frozen at the recording's start time.
+  useEffect(() => {
+    if (!recording) return;
+    let cancelled = false;
+    let busyTick = false;
+    const id = setInterval(async () => {
+      if (busyTick) return;
+      busyTick = true;
+      try {
+        const snap: CaptureSnapshot = { loc: locationRef.current, ts: Date.now() };
+        const uri = await renderStampPng(snap, recordingStageWidth.current);
+        if (cancelled || !uri) return;
+        setOverlayUri(uri);
+        // Delete the previous tick's temp PNG now that it's been replaced.
+        const old = lastTickUri.current;
+        lastTickUri.current = uri;
+        if (old) {
+          try {
+            new File(old).delete();
+          } catch {
+            // Best-effort cleanup; cache files are reclaimed eventually anyway.
+          }
+        }
+      } finally {
+        busyTick = false;
+      }
+    }, 1000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recording]);
 
   /** Triggers a native photo and resolves with its file URI. */
   function capturePhoto(): Promise<string> {
@@ -308,6 +358,8 @@ export default function CameraScreen({ onOpenGallery, onCaptured }: CameraScreen
     }
 
     // Stage the stamp, let the prop flush to native, then start recording.
+    recordingStageWidth.current = windowWidth;
+    lastTickUri.current = null;
     const overlay = await renderStampPng(snap);
     setOverlayUri(overlay);
     await waitFrame();
@@ -371,9 +423,10 @@ export default function CameraScreen({ onOpenGallery, onCaptured }: CameraScreen
           PNG and burned into captures by the native camera. */}
       {overlayJob && (
         <View
+          key={overlayJob.ts}
           ref={overlayViewRef}
           collapsable={false}
-          style={[styles.overlayStage, { width: windowWidth }]}
+          style={[styles.overlayStage, { width: overlayJob.width }]}
           onLayout={captureOverlay}
         >
           <Stamp

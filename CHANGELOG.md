@@ -7,6 +7,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Fixed
+- The timestamp burned into videos now ticks second by second while recording
+  (and the location stays live), instead of staying frozen at the moment the
+  recording started.
+
 ## [1.2.0] - 2026-07-18
 
 ### Added
