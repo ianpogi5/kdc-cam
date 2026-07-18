@@ -5,14 +5,27 @@ camera is implemented natively with CameraX (the iOS view is an unimplemented
 stub).
 
 - 📷 Take **photos** and record **videos**
-- 📍 Live **GPS location** (reverse-geocoded address + coordinates) and a **timestamp** stamped across the bottom of the screen
+- 📍 Live **GPS location** (reverse-geocoded address + coordinates) and a **timestamp** (with seconds) stamped across the bottom of the screen
 - 🔥 The stamp is **burned into both photos and videos in real time** (CameraX), so it survives sharing/export — videos save instantly with no re-encode
+- 🔄 Works in **portrait and landscape** — captures come out upright with the stamp along the bottom edge either way
 - 🖼️ Built-in **gallery** to browse, play, and delete what you've captured
 - Captures are also saved to your device's photo library
 
-> **Just want to install it?** See **[INSTALL.md](INSTALL.md)** and grab the
-> latest APK from the [Releases page](https://github.com/ianpogi5/kdc-cam/releases/latest).
+> **Just want to install it?** See **[INSTALL.md](INSTALL.md)** or
+> **[cam.kdc.sh](https://cam.kdc.sh)** and grab the latest APK from the
+> [Releases page](https://github.com/ianpogi5/kdc-cam/releases/latest).
 > (Android only.)
+
+## Screenshots
+
+| Camera (portrait) | Stamped photo |
+| :---: | :---: |
+| ![Camera UI in portrait](docs/screenshots/camera-portrait.png) | ![A captured photo with the location + timestamp stamp](docs/screenshots/sample-photo-portrait.jpg) |
+
+| Camera (landscape) |
+| :---: |
+| ![Camera UI in landscape](docs/screenshots/camera-landscape.png) |
+| ![A landscape photo with the stamp along the bottom edge](docs/screenshots/sample-photo-landscape.jpg) |
 
 ## Requirements
 

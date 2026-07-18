@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KDC Cam — GPS + timestamp camera for Android</title>
+<meta name="description" content="A free Android camera app that burns a live GPS location and timestamp stamp into your photos and videos as they're captured.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📍</text></svg>">
+<style>
+  :root {
+    --bg: #0e0f12;
+    --surface: #17181d;
+    --surface-alt: #1f2128;
+    --text: #f2f3f5;
+    --muted: #a5abb5;
+    --accent: #ff4d4d;
+    --accent-soft: rgba(255, 77, 77, 0.12);
+    --border: #2a2d35;
+    --radius: 14px;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f7f7f8;
+      --surface: #ffffff;
+      --surface-alt: #eef0f3;
+      --text: #16181d;
+      --muted: #5b616b;
+      --accent: #e03131;
+      --accent-soft: rgba(224, 49, 49, 0.08);
+      --border: #e2e4e8;
+    }
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.6;
+  }
+  a { color: inherit; }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 0 20px; }
+
+  header { padding: 72px 0 40px; text-align: center; }
+  .logo { font-size: 56px; }
+  h1 { font-size: clamp(2rem, 6vw, 3rem); letter-spacing: -0.02em; margin-top: 8px; }
+  .tagline { color: var(--muted); font-size: 1.15rem; max-width: 560px; margin: 12px auto 0; }
+  .cta-row { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-top: 28px; }
+  .btn {
+    display: inline-block; padding: 13px 26px; border-radius: 999px;
+    text-decoration: none; font-weight: 600; border: 1px solid var(--border);
+  }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.primary:hover { filter: brightness(1.1); }
+  .btn.ghost:hover { background: var(--surface-alt); }
+  .note { color: var(--muted); font-size: 0.85rem; margin-top: 14px; }
+
+  section { padding: 48px 0; }
+  h2 { font-size: 1.6rem; margin-bottom: 24px; text-align: center; letter-spacing: -0.01em; }
+
+  .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; }
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 22px;
+  }
+  .card .icon { font-size: 26px; }
+  .card h3 { font-size: 1.05rem; margin: 10px 0 6px; }
+  .card p { color: var(--muted); font-size: 0.95rem; }
+
+  .shots { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; align-items: flex-start; }
+  .shot { max-width: 100%; border-radius: var(--radius); border: 1px solid var(--border); display: block; }
+  .shot.portrait { width: min(300px, 90vw); }
+  .shot.landscape { width: min(640px, 100%); }
+  .shot-caption { text-align: center; color: var(--muted); font-size: 0.85rem; margin-top: 8px; }
+  figure { margin: 0; }
+
+  .steps { max-width: 640px; margin: 0 auto; counter-reset: step; }
+  .step {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 18px 20px 18px 64px; margin-bottom: 12px; position: relative;
+  }
+  .step::before {
+    counter-increment: step; content: counter(step);
+    position: absolute; left: 18px; top: 18px;
+    width: 30px; height: 30px; border-radius: 50%;
+    background: var(--accent-soft); color: var(--accent);
+    font-weight: 700; display: flex; align-items: center; justify-content: center;
+  }
+  .step h3 { font-size: 1rem; margin-bottom: 4px; }
+  .step p { color: var(--muted); font-size: 0.95rem; }
+  .step a { color: var(--accent); }
+
+  .faq { max-width: 640px; margin: 0 auto; }
+  .faq details {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px 20px; margin-bottom: 10px;
+  }
+  .faq summary { font-weight: 600; cursor: pointer; }
+  .faq p { color: var(--muted); margin-top: 8px; font-size: 0.95rem; }
+
+  footer {
+    border-top: 1px solid var(--border); padding: 32px 0; margin-top: 32px;
+    text-align: center; color: var(--muted); font-size: 0.9rem;
+  }
+  footer a { color: var(--accent); text-decoration: none; }
+</style>
+</head>
+<body>
+
+<header class="wrap">
+  <div class="logo">📍📷</div>
+  <h1>KDC Cam</h1>
+  <p class="tagline">A free Android camera that burns your <strong>GPS location</strong> and a <strong>live timestamp</strong> into every photo and video — as it's captured, not after.</p>
+  <div class="cta-row">
+    <a class="btn primary" href="https://github.com/ianpogi5/kdc-cam/releases/latest">⬇ Download APK</a>
+    <a class="btn ghost" href="https://github.com/ianpogi5/kdc-cam">View on GitHub</a>
+  </div>
+  <p class="note">Android only · free &amp; open source · no ads, no accounts, no tracking</p>
+</header>
+
+<section class="wrap">
+  <h2>Features</h2>
+  <div class="features">
+    <div class="card"><div class="icon">🔥</div><h3>Burned in, for real</h3>
+      <p>The stamp is rendered into the pixels of your photos and videos live via Android CameraX — it survives sharing, exports, and edits. Videos save instantly with no re-encoding.</p></div>
+    <div class="card"><div class="icon">📍</div><h3>Live location</h3>
+      <p>Reverse-geocoded address plus exact coordinates, straight from GPS. What you see on screen is what gets stamped.</p></div>
+    <div class="card"><div class="icon">🕐</div><h3>Timestamp to the second</h3>
+      <p>Date and time with seconds, frozen at the moment a photo is taken or a recording starts.</p></div>
+    <div class="card"><div class="icon">🔄</div><h3>Portrait &amp; landscape</h3>
+      <p>Rotate freely — captures come out upright with the stamp along the bottom edge in both orientations, front and back camera.</p></div>
+    <div class="card"><div class="icon">🖼️</div><h3>Built-in gallery</h3>
+      <p>Browse, swipe between, play, and delete your stamped captures. Everything is also saved to your phone's photo library.</p></div>
+    <div class="card"><div class="icon">🔓</div><h3>Open source</h3>
+      <p>Expo / React Native with a native CameraX module. MIT licensed, auditable, and built in the open on GitHub.</p></div>
+  </div>
+</section>
+
+<section class="wrap">
+  <h2>Screenshots</h2>
+  <div class="shots">
+    <figure>
+      <img class="shot portrait" src="screenshots/camera-portrait.png" alt="KDC Cam camera screen in portrait with the location and timestamp stamp at the bottom">
+      <figcaption class="shot-caption">Camera — portrait</figcaption>
+    </figure>
+    <figure>
+      <img class="shot portrait" src="screenshots/sample-photo-portrait.jpg" alt="A photo captured with KDC Cam showing the burned-in location and timestamp stamp">
+      <figcaption class="shot-caption">A stamped photo</figcaption>
+    </figure>
+  </div>
+  <div class="shots" style="margin-top:16px">
+    <figure>
+      <img class="shot landscape" src="screenshots/camera-landscape.png" alt="KDC Cam camera screen in landscape">
+      <figcaption class="shot-caption">Camera — landscape</figcaption>
+    </figure>
+    <figure>
+      <img class="shot landscape" src="screenshots/sample-photo-landscape.jpg" alt="A landscape photo with the stamp along the bottom edge">
+      <figcaption class="shot-caption">A landscape capture</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section class="wrap">
+  <h2>Install in about a minute</h2>
+  <div class="steps">
+    <div class="step"><h3>Download the APK</h3>
+      <p>On your Android phone, open the <a href="https://github.com/ianpogi5/kdc-cam/releases/latest">latest release</a> and tap the file ending in <strong>.apk</strong> under <em>Assets</em>.</p></div>
+    <div class="step"><h3>Open the downloaded file</h3>
+      <p>Tap the download notification, or find it in your <strong>Files</strong> app under <strong>Downloads</strong>.</p></div>
+    <div class="step"><h3>Allow installing from this source</h3>
+      <p>Android will warn about apps from outside the Play Store — tap <strong>Settings</strong> on the pop-up, turn on <strong>Allow from this source</strong>, and go back. If Play Protect warns, choose <strong>More details → Install anyway</strong>.</p></div>
+    <div class="step"><h3>Install &amp; grant permissions</h3>
+      <p>Tap <strong>Install</strong>, open the app, and allow <strong>camera, microphone, location, and photos</strong> — that's everything it needs to record stamped captures.</p></div>
+  </div>
+</section>
+
+<section class="wrap">
+  <h2>FAQ</h2>
+  <div class="faq">
+    <details><summary>Why isn't it on the Play Store?</summary>
+      <p>KDC Cam is a small open-source app shared directly as an APK from GitHub Releases. Installing it takes a minute and updates simply install over the old version — no uninstall needed.</p></details>
+    <details><summary>Does it work on iPhone?</summary>
+      <p>No — the camera is implemented natively with Android CameraX, so the app is Android only.</p></details>
+    <details><summary>Can the stamp be removed from a photo later?</summary>
+      <p>Not by the app — the stamp is part of the image/video pixels from the moment of capture. That's the point: it can't quietly disappear when the file is shared or exported.</p></details>
+    <details><summary>Where do my captures go?</summary>
+      <p>Into the app's built-in gallery and your phone's photo library. Nothing is uploaded anywhere — the app has no server, no account, and no analytics.</p></details>
+    <details><summary>How do I update?</summary>
+      <p>Download the newer APK from the releases page and install it — it replaces the old version and keeps your captures.</p></details>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p>KDC Cam — free &amp; open source · <a href="https://github.com/ianpogi5/kdc-cam">GitHub</a> · <a href="https://github.com/ianpogi5/kdc-cam/releases/latest">Latest release</a></p>
+  </div>
+</footer>
+
+</body>
+</html>
