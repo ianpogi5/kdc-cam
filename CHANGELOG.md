@@ -7,6 +7,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+- The stamp's timestamp now includes the day of the week (e.g. "Monday").
+
 ## [1.2.1] - 2026-07-18
 
 ### Fixed
