@@ -7,6 +7,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-07-19
+
 ### Security
 - Updated the `uuid` build dependency to 11.1.1 (GHSA-w5hq-g745-h8pq, moderate:
   missing buffer bounds check). Build-time only; the app itself was not affected.
